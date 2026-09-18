@@ -1,0 +1,8 @@
+.git/
+node_modules/
+.env*
+data/
+artifacts/
+.vercel/
+docs/
+VERIFICATION.md

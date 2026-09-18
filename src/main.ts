@@ -1,4 +1,5 @@
 import './style.css';
+import { createDecisionInspector } from './decisions.js';
 import { createTable } from './table.js';
 import type { Action, Snapshot, Telemetry } from '../shared/types.js';
 
@@ -27,11 +28,13 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div id="run-result" class="run-result" role="status" hidden></div>
     </div>
   </main>
+  <section id="decision-inspector" class="decisions" aria-label="Jev decision input and output"></section>
   <aside id="move-notice" class="move-notice" role="status" aria-live="polite" aria-atomic="true" hidden><div class="move-copy"><span>Jev played</span><strong id="move-name"></strong></div>${moveFlippers}</aside>
   <div id="status" class="status" role="status" hidden></div>
 `;
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const decisions = createDecisionInspector($('decision-inspector'));
 let snapshot: Snapshot | null = null, telemetry: Telemetry | null = null;
 let table: Awaited<ReturnType<typeof createTable>> | null = null;
 let worker: Worker, connected = false, rendererReady = false, rendererFailed = false;
@@ -77,7 +80,7 @@ $('start').addEventListener('click', () => {
 function updateSnapshot(s: Snapshot) {
   const changed = s.runId !== lastRun || s.status !== lastStatus;
   snapshot = s;
-  if (s.runId !== lastRun) { lastRun = s.runId; table?.reset(); clearMoveNotice(); }
+  if (s.runId !== lastRun) { lastRun = s.runId; table?.reset(); clearMoveNotice(); decisions.reset(); }
   table?.update(s);
   if (!changed && performance.now() - lastUiUpdate < 80) return;
   lastUiUpdate = performance.now();
@@ -127,6 +130,7 @@ function connect() {
       lastDecisionSeq = Math.max(0, ...telemetry!.decisions.map(d => d.seq));
       updateControls();
     }
+    if (m.type === 'decision' && m.decision.runId === snapshot?.runId) decisions.update(m.decision);
     if (m.type === 'snapshot') updateSnapshot(m.snapshot);
     if (m.type === 'telemetry') { telemetry = m.telemetry; showLatestMove(telemetry!); updateControls(); }
     if (m.type === 'error') { errorMessage = m.message; pendingCommand = false; clearTimeout(commandTimer); updateControls(); }

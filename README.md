@@ -1,6 +1,6 @@
 # jev & pinball
 
-Watch Jev play pinball in real time. Physics never waits for a model response; the move notice shows which flippers Jev actually used.
+Watch Jev play pinball in real time. Physics never waits for a model response; the move notice shows which flippers Jev actually used. Below the board, inspect every decision’s input context, structured response, and applied/discarded status.
 
 ![jev playing pinball](docs/game.png)
 

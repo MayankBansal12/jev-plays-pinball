@@ -9,8 +9,14 @@ import type { AddressInfo } from 'node:net';
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 test('server-only Jev endpoint validates requests and returns safe API failures', { timeout: 15000 }, async () => {
-  let calls = 0;
-  const fake = createServer((_req, res) => { calls++; res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'private-provider-error' })); });
+  let calls = 0, succeed = false, received: unknown;
+  const answer = { model: 'jev-1.13.0', answers: { flippers: { type: 'choice', choice: 'left', confidence: .91, probabilities: { left: .91, right: .03, both: .04, neither: .02 } } }, usage: { input_tokens: 543, output_tokens: 0 } };
+  const fake = createServer(async (req, res) => {
+    calls++; const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
+    received = JSON.parse(Buffer.concat(chunks).toString());
+    res.writeHead(succeed ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(succeed ? answer : { error: 'private-provider-error' }));
+  });
   await new Promise<void>(r => fake.listen(0, '127.0.0.1', r));
   const reservation = createServer(); await new Promise<void>(r => reservation.listen(0, '127.0.0.1', r));
   const port = (reservation.address() as AddressInfo).port;
@@ -34,8 +40,21 @@ test('server-only Jev endpoint validates requests and returns safe API failures'
     const response = await post(JSON.stringify({ snapshot, latency: 100 }));
     assert.equal(response.status, 502);
     assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.deepEqual(await response.json(), { error: 'Jev request failed. The ball kept moving; no bot took over.' });
+    const failure = await response.json();
+    assert.equal(failure.error, 'Jev request failed. The ball kept moving; no bot took over.');
+    assert.deepEqual(failure.input, received, 'failed requests preserve the exact submitted context');
     assert.equal(calls, 1);
+    succeed = true;
+    const success = await post(JSON.stringify({ snapshot, latency: 100 }));
+    assert.equal(success.status, 200);
+    const result = await success.json();
+    assert.deepEqual(result.input, received, 'inspector input is exactly the payload sent to Jev');
+    assert.deepEqual(result.output, answer, 'inspector output preserves the complete structured Jev response');
+    assert.equal(result.action, 'left');
+    assert.equal(result.input.questions.flippers.type, 'choice');
+    assert.deepEqual(result.input.state.ball, snapshot.ball);
+    assert.equal(JSON.stringify(result).includes('test-placeholder-not-a-real-key'), false, 'traces never contain authorization headers or credentials');
+    assert.equal(calls, 2);
   } finally {
     child.kill('SIGTERM'); await new Promise<void>(r => { if (child.exitCode !== null) r(); else child.once('exit', () => r()); });
     await new Promise<void>(r => fake.close(() => r())); await rm(dir, { recursive: true, force: true });

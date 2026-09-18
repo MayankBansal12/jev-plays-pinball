@@ -1,5 +1,7 @@
 import { ACTIONS, type DecisionState } from '../shared/types.js';
-import { configured, decide, safeError } from '../server/jev.js';
+import { configured, decide, modelName, safeError } from '../server/jev.js';
+
+import { buildJevInput } from '../shared/jev-context.js';
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 const number = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -30,9 +32,10 @@ export default {
     } catch { return json({ error: 'Invalid JSON.' }, 400); }
     if (!body || !validState(body.snapshot) || !number(body.latency, 0, 10_000)) return json({ error: 'Invalid game state.' }, 400);
     if (!configured()) return json({ error: 'Set TYPESAFE_API_KEY in the server environment.' }, 503);
+    const input = buildJevInput(body.snapshot, body.latency as number, modelName());
     try {
-      const result = await decide(body.snapshot, body.latency as number, request.signal);
-      return json({ action: result.action, confidence: result.confidence, model: result.model, usage: result.usage });
-    } catch (error) { return json({ error: safeError(error) }, 502); }
+      const output = await decide(input, request.signal);
+      return json({ action: output.answers.flippers.choice, confidence: output.answers.flippers.confidence, model: output.model, usage: output.usage, input, output });
+    } catch (error) { return json({ error: safeError(error), input }, 502); }
   },
 };
